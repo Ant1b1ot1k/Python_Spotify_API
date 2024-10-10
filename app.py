@@ -1,16 +1,18 @@
 # https://code.visualstudio.com/docs/python/tutorial-flask
-# follow this to create virtual environment for flask
+# follow this to create virtual environment (venv) for flask
 
 from flask import Flask, request, url_for, session, redirect
-import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+import spotipy
+import time
 
 
 app = Flask(__name__) 
 
 # sign the session or a cookie
-app.secret_key = "random_gen"
+app.secret_key = "random_key"
 app.config['SESSION_COOKIE_NAME'] = 'spotify_api_cookie'
+TOKEN_INFO = 'token_info'
 
 @app.route('/')
 def login():
@@ -20,11 +22,45 @@ def login():
 
 @app.route('/redirect')
 def redirectPage():
-    return 'redirect'
+    sp_oauth = create_spotify_oauth()
+    session.clear()
+    code = request.args.get('code') 
+    token_info = sp_oauth.get_access_token(code)
+    session[TOKEN_INFO] = token_info
+    return redirect(url_for('getTracks', _external=True))
 
 @app.route('/getTracks')
 def getTracks():
-    return 'Some songs'
+    try:
+        token_info = get_token()
+    except:
+        print("user not logged in") 
+        return redirect(url_for('login', _external=True))
+
+    sp = spotipy.Spotify(auth=token_info['access_token'])
+    # return sp.current_user_recently_played(limit=20)
+
+    all_songs = [] 
+    iter = 1
+    while True:
+        items = sp.current_user_saved_tracks(limit=50, offset=0)['items']
+        iter += 1
+        all_songs += items
+        if (len(items) < 50):
+            break
+    return str(len(all_songs))
+
+def get_token():
+    token_info = session.get(TOKEN_INFO, None)
+    if not token_info:
+        raise "exception"
+    now = int(time.time())
+    is_expired = token_info['expires_at'] - now < 60
+    if (is_expired):
+        sp_oauth = create_spotify_oauth() 
+        token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
+    
+    return token_info
 
 def create_spotify_oauth():
     return SpotifyOAuth(
